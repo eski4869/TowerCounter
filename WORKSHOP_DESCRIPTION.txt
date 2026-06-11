@@ -1,0 +1,17 @@
+Tower Counter is a simple mod that counts how many times you have reached a tower entrance.
+
+Press T on the tower entrance screen to start counting from Tower: 1. After that, the counter increases when you leave the tower area and later return to the marked entrance screen.
+
+The count is displayed in-game near the timer.
+
+Controls:
+
+T: Mark the current screen as the tower entrance.
++: Increase the count by 1.
+-: Decrease the count by 1.
+
+Menu:
+
+Tower Counter: Enables or disables the counter. Counter detection is paused while this is off.
+
+GitHub: https://github.com/eski4869/TowerCounter
