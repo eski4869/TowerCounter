@@ -47,6 +47,18 @@ namespace TowerCounter
         {
             TowerCounterDisplay.Enabled = Preferences.IsEnabled;
             TowerCounterBehaviour.EnsureCreated();
+
+            if (!Preferences.IsEnabled)
+            {
+                UnregisterTowerBehaviour();
+                return;
+            }
+
+            RegisterTowerBehaviour();
+        }
+
+        private static void RegisterTowerBehaviour()
+        {
             PlayerEntity player = EntityManager.instance.Find<PlayerEntity>();
 
             if (player == null)
@@ -67,6 +79,29 @@ namespace TowerCounter
 
             _registeredBehaviour = TowerCounterBehaviour.Instance;
             player.m_body.RegisterBehaviour(_registeredBehaviour);
+        }
+
+        private static void UnregisterTowerBehaviour()
+        {
+            if (_registeredBehaviour == null)
+            {
+                return;
+            }
+
+            PlayerEntity player = EntityManager.instance.Find<PlayerEntity>();
+
+            if (player != null)
+            {
+                try
+                {
+                    player.m_body.RemoveBehaviour(_registeredBehaviour);
+                }
+                catch
+                {
+                }
+            }
+
+            _registeredBehaviour = null;
         }
 
         [OnLevelEnd]
@@ -106,6 +141,16 @@ namespace TowerCounter
             Preferences.IsEnabled = isEnabled;
             TowerCounterDisplay.Enabled = isEnabled;
             _settingsDirty = true;
+
+            if (isEnabled)
+            {
+                TowerCounterBehaviour.ReloadState();
+                RegisterTowerBehaviour();
+            }
+            else
+            {
+                UnregisterTowerBehaviour();
+            }
         }
 
         public static void SetTowerState(bool hasTower, int count, int entranceScreen)
@@ -240,11 +285,6 @@ namespace TowerCounter
         protected override void OnToggle()
         {
             ModEntry.SetDisplayEnabled(toggle);
-
-            if (toggle)
-            {
-                TowerCounterBehaviour.ReloadState();
-            }
         }
     }
 
