@@ -12,6 +12,7 @@
 		<AssemblyName>TowerCounter</AssemblyName>
 		<TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
 		<FileAlignment>512</FileAlignment>
+		<AllowedReferenceRelatedFileExtensions>.dll</AllowedReferenceRelatedFileExtensions>
 	</PropertyGroup>
 	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
 		<DebugSymbols>true</DebugSymbols>
@@ -46,6 +47,10 @@
 			<Private>False</Private>
 			<SpecificVersion>False</SpecificVersion>
 			<HintPath>C:\Program Files (x86)\Steam\steamapps\common\Jump King\MonoGame.Framework.dll</HintPath>
+		</Reference>
+		<Reference Include="0Harmony">
+			<Private>True</Private>
+			<HintPath>C:\Program Files (x86)\Steam\steamapps\workshop\content\1061090\3696408162\0Harmony.dll</HintPath>
 		</Reference>
 	</ItemGroup>
 	<ItemGroup>
