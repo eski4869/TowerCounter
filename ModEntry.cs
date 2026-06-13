@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Reflection;
-using System.Text;
+using System.Xml.Serialization;
 using EntityComponent;
 using JumpKing;
 using JumpKing.API;
@@ -22,18 +22,26 @@ namespace TowerCounter
     [JumpKingMod("eski4869.TowerCounter")]
     public static class ModEntry
     {
+        private const string SettingsFileName = "eski4869.TowerCounter.Settings.xml";
+
         private static TowerCounterBehaviour _registeredBehaviour;
+        private static string _assemblyPath;
+        private static string _settingsPath;
+        private static bool _settingsDirty;
+        private static bool _processExitRegistered;
+
+        public static Preferences Preferences { get; private set; }
 
         [BeforeLevelLoad]
         public static void BeforeLevelLoad()
         {
-            TowerCounterBehaviour.EnsureCreated();
-            TowerCounterDisplay.EnsureAdded();
+            EnsurePreferencesLoaded();
         }
 
         [OnLevelStart]
         public static void OnLevelStart()
         {
+            TowerCounterDisplay.Enabled = Preferences.IsEnabled;
             TowerCounterBehaviour.EnsureCreated();
             TowerCounterDisplay.EnsureAdded();
             PlayerEntity player = EntityManager.instance.Find<PlayerEntity>();
@@ -58,17 +66,135 @@ namespace TowerCounter
             player.m_body.RegisterBehaviour(_registeredBehaviour);
         }
 
+        [OnLevelEnd]
+        public static void OnLevelEnd()
+        {
+            SaveSettingsIfDirty();
+        }
+
+        [OnLevelUnload]
+        public static void OnLevelUnload()
+        {
+            SaveSettingsIfDirty();
+        }
+
         [PauseMenuItemSetting]
         [MainMenuItemSetting]
         public static DisplayCounterToggle DisplayCounterMenu(object factory, GuiFormat format)
         {
             return new DisplayCounterToggle();
         }
+
+        public static bool IsDisplayEnabled()
+        {
+            EnsurePreferencesLoaded();
+            return Preferences.IsEnabled;
+        }
+
+        public static void SetDisplayEnabled(bool isEnabled)
+        {
+            EnsurePreferencesLoaded();
+
+            if (Preferences.IsEnabled == isEnabled)
+            {
+                return;
+            }
+
+            Preferences.IsEnabled = isEnabled;
+            TowerCounterDisplay.Enabled = isEnabled;
+            _settingsDirty = true;
+        }
+
+        public static void SetTowerState(bool hasTower, int count, int entranceScreen)
+        {
+            EnsurePreferencesLoaded();
+
+            if (Preferences.SetTowerState(hasTower, count, entranceScreen))
+            {
+                _settingsDirty = true;
+            }
+        }
+
+        private static void EnsurePreferencesLoaded()
+        {
+            if (Preferences != null)
+            {
+                RegisterProcessExit();
+                return;
+            }
+
+            _assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            _settingsPath = Path.Combine(_assemblyPath, SettingsFileName);
+
+            try
+            {
+                if (File.Exists(_settingsPath))
+                {
+                    var serializer = new XmlSerializer(typeof(Preferences));
+
+                    using (var stream = File.OpenRead(_settingsPath))
+                    {
+                        Preferences = (Preferences)serializer.Deserialize(stream);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (Preferences == null)
+            {
+                Preferences = new Preferences();
+            }
+
+            RegisterProcessExit();
+        }
+
+        private static void RegisterProcessExit()
+        {
+            if (_processExitRegistered)
+            {
+                return;
+            }
+
+            AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+            _processExitRegistered = true;
+        }
+
+        private static void OnProcessExit(object sender, EventArgs e)
+        {
+            SaveSettingsIfDirty();
+        }
+
+        private static void SaveSettingsIfDirty()
+        {
+            if (!_settingsDirty || Preferences == null)
+            {
+                return;
+            }
+
+            try
+            {
+                EnsurePreferencesLoaded();
+
+                var serializer = new XmlSerializer(typeof(Preferences));
+
+                using (var stream = File.Create(_settingsPath))
+                {
+                    serializer.Serialize(stream, Preferences);
+                }
+
+                _settingsDirty = false;
+            }
+            catch
+            {
+            }
+        }
     }
 
     public class DisplayCounterToggle : ITextToggle
     {
-        public DisplayCounterToggle() : base(TowerCounterDisplay.Enabled)
+        public DisplayCounterToggle() : base(ModEntry.IsDisplayEnabled())
         {
         }
 
@@ -79,12 +205,99 @@ namespace TowerCounter
 
         protected override void OnToggle()
         {
-            TowerCounterDisplay.Enabled = toggle;
+            ModEntry.SetDisplayEnabled(toggle);
 
             if (toggle)
             {
                 TowerCounterBehaviour.ReloadState();
             }
+        }
+    }
+
+    public class Preferences
+    {
+        private bool _isEnabled = true;
+        private bool _hasTower;
+        private int _count;
+        private int _entranceScreen = -1;
+
+        public bool IsEnabled
+        {
+            get
+            {
+                return _isEnabled;
+            }
+            set
+            {
+                if (_isEnabled == value)
+                {
+                    return;
+                }
+                _isEnabled = value;
+            }
+        }
+
+        public bool HasTower
+        {
+            get
+            {
+                return _hasTower;
+            }
+            set
+            {
+                if (_hasTower == value)
+                {
+                    return;
+                }
+                _hasTower = value;
+            }
+        }
+
+        public int Count
+        {
+            get
+            {
+                return _count;
+            }
+            set
+            {
+                if (_count == value)
+                {
+                    return;
+                }
+                _count = value;
+            }
+        }
+
+        public int EntranceScreen
+        {
+            get
+            {
+                return _entranceScreen;
+            }
+            set
+            {
+                if (_entranceScreen == value)
+                {
+                    return;
+                }
+                _entranceScreen = value;
+            }
+        }
+
+        public bool SetTowerState(bool hasTower, int count, int entranceScreen)
+        {
+            if (_hasTower == hasTower &&
+                _count == count &&
+                _entranceScreen == entranceScreen)
+            {
+                return false;
+            }
+
+            _hasTower = hasTower;
+            _count = count;
+            _entranceScreen = entranceScreen;
+            return true;
         }
     }
 
@@ -180,7 +393,6 @@ namespace TowerCounter
     {
         private const int MinScreen = 1;
         private const int MaxScreen = 169;
-        private const string StateFileName = "towercounter.state";
 
         private static readonly object Sync = new object();
         private static TowerCounterBehaviour _instance;
@@ -223,8 +435,6 @@ namespace TowerCounter
             }
         }
 
-        private readonly string _statePath;
-
         private Location[] _locations = new Location[0];
         private KeyboardState _previousKeyboardState;
 
@@ -248,8 +458,6 @@ namespace TowerCounter
         public TowerCounterBehaviour()
         {
             _instance = this;
-            string assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            _statePath = Path.Combine(assemblyDir, StateFileName);
             _locations = LoadLocations();
             LoadState();
         }
@@ -358,57 +566,32 @@ namespace TowerCounter
 
         private void LoadState()
         {
-            try
+            ModEntry.IsDisplayEnabled();
+            Preferences preferences = ModEntry.Preferences;
+
+            if (preferences == null || !preferences.HasTower)
             {
-                if (!File.Exists(_statePath))
-                {
-                    return;
-                }
-
-                string[] lines = File.ReadAllLines(_statePath);
-
-                if (lines.Length < 2)
-                {
-                    return;
-                }
-
-                int count;
-                int entranceScreen;
-
-                if (!int.TryParse(lines[0], out count) ||
-                    !int.TryParse(lines[1], out entranceScreen))
-                {
-                    return;
-                }
-
-                if (count < 0)
-                {
-                    count = 0;
-                }
-
-                _count = count;
-                _entranceScreen = entranceScreen;
-                _hasTower = entranceScreen >= MinScreen && entranceScreen <= MaxScreen;
-                _hasLeftTowerArea = false;
-                RestoreTowerAreaFromEntranceScreen();
+                return;
             }
-            catch
+
+            int count = preferences.Count;
+            int entranceScreen = preferences.EntranceScreen;
+
+            if (count < 0)
             {
+                count = 0;
             }
+
+            _count = count;
+            _entranceScreen = entranceScreen;
+            _hasTower = entranceScreen >= MinScreen && entranceScreen <= MaxScreen;
+            _hasLeftTowerArea = false;
+            RestoreTowerAreaFromEntranceScreen();
         }
 
         private void SaveState()
         {
-            try
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine(_count.ToString());
-                sb.AppendLine(_entranceScreen.ToString());
-                File.WriteAllText(_statePath, sb.ToString());
-            }
-            catch
-            {
-            }
+            ModEntry.SetTowerState(_hasTower, _count, _entranceScreen);
         }
 
         private void RestoreTowerAreaFromEntranceScreen()

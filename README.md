@@ -22,7 +22,7 @@ The current count is kept when you close the game and continue later.
 
 | Item | Action |
 | --- | --- |
-| `Tower Counter` | Enables or disables the counter. Counter detection is paused while this is off. Turning it back on reloads `towercounter.state`. |
+| `Tower Counter` | Enables or disables the counter. Counter detection is paused while this is off. |
 
 ## Counter Logic
 
@@ -31,5 +31,3 @@ When you press `T`, the mod stores the current screen and current area as the to
 After that, the mod waits until you leave the marked tower area. When you later return to the marked entrance screen and land there, the count increases by `1`.
 
 Pressing `T` somewhere else replaces the previous tower mark and starts again from `Tower: 1`.
-
-The current count and marked entrance screen are saved to `towercounter.state` next to the mod. The state file is only updated when the count or tower mark changes.
