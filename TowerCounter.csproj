@@ -48,10 +48,6 @@
 			<SpecificVersion>False</SpecificVersion>
 			<HintPath>C:\Program Files (x86)\Steam\steamapps\common\Jump King\MonoGame.Framework.dll</HintPath>
 		</Reference>
-		<Reference Include="0Harmony">
-			<Private>True</Private>
-			<HintPath>C:\Program Files (x86)\Steam\steamapps\workshop\content\1061090\3696408162\0Harmony.dll</HintPath>
-		</Reference>
 	</ItemGroup>
 	<ItemGroup>
 		<Compile Include="ModEntry.cs" />

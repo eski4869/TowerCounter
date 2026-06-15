@@ -3,7 +3,6 @@ using System.IO;
 using System.Reflection;
 using System.Xml.Serialization;
 using EntityComponent;
-using HarmonyLib;
 using JumpKing;
 using JumpKing.API;
 using JumpKing.BodyCompBehaviours;
@@ -14,6 +13,7 @@ using JumpKing.PauseMenu;
 using JumpKing.PauseMenu.BT.Actions;
 using JumpKing.Player;
 using JumpKing.Util;
+using JumpKing.Util.Tags;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -30,8 +30,6 @@ namespace TowerCounter
         private static string _settingsPath;
         private static bool _settingsDirty;
         private static bool _processExitRegistered;
-        private static bool _drawPatchRegistered;
-        private static Harmony _harmony;
 
         public static Preferences Preferences { get; private set; }
 
@@ -39,13 +37,13 @@ namespace TowerCounter
         public static void BeforeLevelLoad()
         {
             EnsurePreferencesLoaded();
-            EnsureDrawPatch();
         }
 
         [OnLevelStart]
         public static void OnLevelStart()
         {
             TowerCounterDisplay.Enabled = Preferences.IsEnabled;
+            new TowerCounterDisplay();
             TowerCounterBehaviour.EnsureCreated();
 
             if (!Preferences.IsEnabled)
@@ -214,37 +212,6 @@ namespace TowerCounter
             SaveSettingsIfDirty();
         }
 
-        private static void EnsureDrawPatch()
-        {
-            if (_drawPatchRegistered)
-            {
-                return;
-            }
-
-            try
-            {
-                _harmony = new Harmony("eski4869.TowerCounter");
-
-                MethodInfo original = typeof(GameLoop).GetMethod(
-                    "DrawIngameOverlayItems",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                );
-                MethodInfo postfix = typeof(TowerCounterDisplay).GetMethod(
-                    "DrawCounter",
-                    BindingFlags.Static | BindingFlags.Public
-                );
-
-                if (original != null && postfix != null)
-                {
-                    _harmony.Patch(original, null, new HarmonyMethod(postfix));
-                    _drawPatchRegistered = true;
-                }
-            }
-            catch
-            {
-            }
-        }
-
         private static void SaveSettingsIfDirty()
         {
             if (!_settingsDirty || Preferences == null)
@@ -375,7 +342,7 @@ namespace TowerCounter
         }
     }
 
-    public static class TowerCounterDisplay
+    public class TowerCounterDisplay : Entity, IForeground
     {
         private static readonly FieldInfo TimerDisplayPositionField = typeof(GameLoop).GetField(
             "TIMER_DISPLAY_POSITION",
@@ -384,7 +351,7 @@ namespace TowerCounter
 
         public static bool Enabled = true;
 
-        public static void DrawCounter()
+        public void ForegroundDraw()
         {
             if (!Enabled)
             {
