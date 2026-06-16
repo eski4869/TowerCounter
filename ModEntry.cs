@@ -43,7 +43,7 @@ namespace TowerCounter
         {
             TowerCounterDisplay.Enabled = Preferences.IsEnabled;
             new TowerCounterDisplay();
-            TowerCounterBehaviour.EnsureCreated();
+            TowerCounterBehaviour.PrepareForLevelStart();
 
             if (!Preferences.IsEnabled)
             {
@@ -120,7 +120,7 @@ namespace TowerCounter
 
             if (isEnabled)
             {
-                TowerCounterBehaviour.ReloadState();
+                TowerCounterBehaviour.PrepareForLevelStart();
                 RegisterTowerBehaviour();
             }
             else
@@ -436,6 +436,19 @@ namespace TowerCounter
             }
         }
 
+        public static void PrepareForLevelStart()
+        {
+            lock (Sync)
+            {
+                EnsureCreated();
+
+                if (_instance != null)
+                {
+                    _instance.ReloadLevelState();
+                }
+            }
+        }
+
         private Location[] _locations = new Location[0];
         private KeyboardState _previousKeyboardState;
 
@@ -459,6 +472,11 @@ namespace TowerCounter
         public TowerCounterBehaviour()
         {
             _instance = this;
+            LoadState();
+        }
+
+        private void ReloadLevelState()
+        {
             _locations = LoadLocations();
             LoadState();
         }
@@ -473,6 +491,11 @@ namespace TowerCounter
             if (_locations == null || _locations.Length == 0)
             {
                 _locations = LoadLocations();
+            }
+
+            if (_locations == null || _locations.Length == 0)
+            {
+                return;
             }
 
             if (_hasTower && _towerArea == "Unknown")
@@ -551,11 +574,6 @@ namespace TowerCounter
                 return;
             }
 
-            if (area == "Unknown")
-            {
-                return;
-            }
-
             if (area != _towerArea)
             {
                 _hasLeftTowerArea = true;
@@ -577,6 +595,11 @@ namespace TowerCounter
 
             if (preferences == null || !preferences.HasTower)
             {
+                _hasTower = false;
+                _hasLeftTowerArea = false;
+                _towerArea = "Unknown";
+                _entranceScreen = -1;
+                _count = 0;
                 return;
             }
 
@@ -592,6 +615,7 @@ namespace TowerCounter
             _entranceScreen = entranceScreen;
             _hasTower = entranceScreen >= MinScreen && entranceScreen <= MaxScreen;
             _hasLeftTowerArea = false;
+            _towerArea = "Unknown";
             RestoreTowerAreaFromEntranceScreen();
         }
 
