@@ -71,7 +71,7 @@ namespace TowerCounter
                 return;
             }
 
-            _registeredBehaviour = TowerCounterBehaviour.Instance;
+            _registeredBehaviour = new TowerCounterBehaviour();
             player.AddComponents(new Component[] { _registeredBehaviour });
         }
 
@@ -397,15 +397,6 @@ namespace TowerCounter
         private static readonly object Sync = new object();
         private static TowerCounterBehaviour _instance;
 
-        public static TowerCounterBehaviour Instance
-        {
-            get
-            {
-                EnsureCreated();
-                return _instance;
-            }
-        }
-
         public static int Count
         {
             get
@@ -426,8 +417,6 @@ namespace TowerCounter
         {
             lock (Sync)
             {
-                EnsureCreated();
-
                 if (_instance != null)
                 {
                     _instance.LoadState();
@@ -443,17 +432,6 @@ namespace TowerCounter
         private string _towerArea = "Unknown";
         private int _entranceScreen = -1;
         private int _count;
-
-        public static void EnsureCreated()
-        {
-            lock (Sync)
-            {
-                if (_instance == null)
-                {
-                    _instance = new TowerCounterBehaviour();
-                }
-            }
-        }
 
         public TowerCounterBehaviour()
         {
