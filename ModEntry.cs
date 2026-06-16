@@ -83,12 +83,14 @@ namespace TowerCounter
         [OnLevelEnd]
         public static void OnLevelEnd()
         {
+            TowerCounterDisplay.Enabled = false;
             SaveSettingsIfDirty();
         }
 
         [OnLevelUnload]
         public static void OnLevelUnload()
         {
+            TowerCounterDisplay.Enabled = false;
             SaveSettingsIfDirty();
         }
 
