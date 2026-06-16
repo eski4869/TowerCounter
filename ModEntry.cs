@@ -5,7 +5,6 @@ using System.Xml.Serialization;
 using EntityComponent;
 using JumpKing;
 using JumpKing.API;
-using JumpKing.BodyCompBehaviours;
 using JumpKing.GameManager;
 using JumpKing.MiscSystems.LocationText;
 using JumpKing.Mods;
@@ -64,41 +63,20 @@ namespace TowerCounter
                 return;
             }
 
-            if (_registeredBehaviour != null)
+            TowerCounterBehaviour existingBehaviour = player.GetComponent<TowerCounterBehaviour>();
+
+            if (existingBehaviour != null)
             {
-                try
-                {
-                    player.m_body.RemoveBehaviour(_registeredBehaviour);
-                }
-                catch
-                {
-                }
+                _registeredBehaviour = existingBehaviour;
+                return;
             }
 
             _registeredBehaviour = TowerCounterBehaviour.Instance;
-            player.m_body.RegisterBehaviour(_registeredBehaviour);
+            player.AddComponents(new Component[] { _registeredBehaviour });
         }
 
         private static void UnregisterTowerBehaviour()
         {
-            if (_registeredBehaviour == null)
-            {
-                return;
-            }
-
-            PlayerEntity player = EntityManager.instance.Find<PlayerEntity>();
-
-            if (player != null)
-            {
-                try
-                {
-                    player.m_body.RemoveBehaviour(_registeredBehaviour);
-                }
-                catch
-                {
-                }
-            }
-
             _registeredBehaviour = null;
         }
 
@@ -412,7 +390,7 @@ namespace TowerCounter
         }
     }
 
-    public class TowerCounterBehaviour : IBodyCompBehaviour
+    public class TowerCounterBehaviour : Component
     {
         private const int MinScreen = 1;
         private const int MaxScreen = 169;
@@ -485,11 +463,11 @@ namespace TowerCounter
             LoadState();
         }
 
-        public bool ExecuteBehaviour(BehaviourContext behaviourContext)
+        protected override void Update(float p_delta)
         {
             if (!TowerCounterDisplay.Enabled)
             {
-                return true;
+                return;
             }
 
             if (_locations == null || _locations.Length == 0)
@@ -505,6 +483,8 @@ namespace TowerCounter
             KeyboardState keyboardState = Keyboard.GetState();
             int screen = JumpKing.Camera.CurrentScreen + 1;
             string area = GetAreaNameForScreen(screen);
+            PlayerEntity player = EntityManager.instance.Find<PlayerEntity>();
+            bool isOnGround = player != null && player.m_body.IsOnGround;
 
             if (WasKeyPressed(keyboardState, Keys.T))
             {
@@ -523,10 +503,8 @@ namespace TowerCounter
                 AdjustCount(-1);
             }
 
-            UpdateAutoCount(screen, area, behaviourContext.BodyComp.IsOnGround);
+            UpdateAutoCount(screen, area, isOnGround);
             _previousKeyboardState = keyboardState;
-
-            return true;
         }
 
         private bool WasKeyPressed(KeyboardState keyboardState, Keys key)
