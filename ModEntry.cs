@@ -551,6 +551,11 @@ namespace TowerCounter
                 return;
             }
 
+            if (area == "Unknown")
+            {
+                return;
+            }
+
             if (area != _towerArea)
             {
                 _hasLeftTowerArea = true;
