@@ -43,7 +43,6 @@ namespace TowerCounter
         {
             TowerCounterDisplay.Enabled = Preferences.IsEnabled;
             new TowerCounterDisplay();
-            TowerCounterBehaviour.PrepareForLevelStart();
 
             if (!Preferences.IsEnabled)
             {
@@ -68,6 +67,7 @@ namespace TowerCounter
             if (existingBehaviour != null)
             {
                 _registeredBehaviour = existingBehaviour;
+                _registeredBehaviour.InitializeForLevelStart();
                 return;
             }
 
@@ -120,7 +120,6 @@ namespace TowerCounter
 
             if (isEnabled)
             {
-                TowerCounterBehaviour.PrepareForLevelStart();
                 RegisterTowerBehaviour();
             }
             else
@@ -436,19 +435,6 @@ namespace TowerCounter
             }
         }
 
-        public static void PrepareForLevelStart()
-        {
-            lock (Sync)
-            {
-                EnsureCreated();
-
-                if (_instance != null)
-                {
-                    _instance.ReloadLevelState();
-                }
-            }
-        }
-
         private Location[] _locations = new Location[0];
         private KeyboardState _previousKeyboardState;
 
@@ -472,10 +458,10 @@ namespace TowerCounter
         public TowerCounterBehaviour()
         {
             _instance = this;
-            LoadState();
+            InitializeForLevelStart();
         }
 
-        private void ReloadLevelState()
+        internal void InitializeForLevelStart()
         {
             _locations = LoadLocations();
             LoadState();
@@ -491,11 +477,6 @@ namespace TowerCounter
             if (_locations == null || _locations.Length == 0)
             {
                 _locations = LoadLocations();
-            }
-
-            if (_locations == null || _locations.Length == 0)
-            {
-                return;
             }
 
             if (_hasTower && _towerArea == "Unknown")
