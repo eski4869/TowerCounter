@@ -29,6 +29,7 @@ namespace TowerCounter
         private static string _settingsPath;
         private static bool _settingsDirty;
         private static bool _processExitRegistered;
+        private static bool _isLevelRunning;
 
         public static Preferences Preferences { get; private set; }
 
@@ -41,16 +42,29 @@ namespace TowerCounter
         [OnLevelStart]
         public static void OnLevelStart()
         {
-            TowerCounterDisplay.Enabled = Preferences.IsEnabled;
-            new TowerCounterDisplay();
+            EnsurePreferencesLoaded();
+            _isLevelRunning = true;
 
-            if (!Preferences.IsEnabled)
+            if (!IsRuntimeActive())
             {
-                UnregisterTowerBehaviour();
+                StopTowerRuntime();
                 return;
             }
 
+            StartTowerRuntime();
+        }
+
+        private static void StartTowerRuntime()
+        {
+            TowerCounterDisplay.Enabled = true;
+            new TowerCounterDisplay();
             RegisterTowerBehaviour();
+        }
+
+        private static void StopTowerRuntime()
+        {
+            TowerCounterDisplay.Enabled = false;
+            UnregisterTowerBehaviour();
         }
 
         private static void RegisterTowerBehaviour()
@@ -77,20 +91,23 @@ namespace TowerCounter
 
         private static void UnregisterTowerBehaviour()
         {
+            TowerCounterBehaviour.ClearInstance(_registeredBehaviour);
             _registeredBehaviour = null;
         }
 
         [OnLevelEnd]
         public static void OnLevelEnd()
         {
-            TowerCounterDisplay.Enabled = false;
+            _isLevelRunning = false;
+            StopTowerRuntime();
             SaveSettingsIfDirty();
         }
 
         [OnLevelUnload]
         public static void OnLevelUnload()
         {
-            TowerCounterDisplay.Enabled = false;
+            _isLevelRunning = false;
+            StopTowerRuntime();
             SaveSettingsIfDirty();
         }
 
@@ -107,6 +124,11 @@ namespace TowerCounter
             return Preferences.IsEnabled;
         }
 
+        internal static bool IsRuntimeActive()
+        {
+            return _isLevelRunning && Preferences != null && Preferences.IsEnabled;
+        }
+
         public static void SetDisplayEnabled(bool isEnabled)
         {
             EnsurePreferencesLoaded();
@@ -117,16 +139,15 @@ namespace TowerCounter
             }
 
             Preferences.IsEnabled = isEnabled;
-            TowerCounterDisplay.Enabled = isEnabled;
             _settingsDirty = true;
 
-            if (isEnabled)
+            if (IsRuntimeActive())
             {
-                RegisterTowerBehaviour();
+                StartTowerRuntime();
             }
             else
             {
-                UnregisterTowerBehaviour();
+                StopTowerRuntime();
             }
         }
 
@@ -328,7 +349,7 @@ namespace TowerCounter
             BindingFlags.Static | BindingFlags.NonPublic
         );
 
-        public static bool Enabled = true;
+        public static bool Enabled = false;
 
         public void ForegroundDraw()
         {
@@ -426,6 +447,17 @@ namespace TowerCounter
             }
         }
 
+        internal static void ClearInstance(TowerCounterBehaviour behaviour)
+        {
+            lock (Sync)
+            {
+                if (ReferenceEquals(_instance, behaviour))
+                {
+                    _instance = null;
+                }
+            }
+        }
+
         private Location[] _locations = new Location[0];
         private KeyboardState _previousKeyboardState;
 
@@ -437,19 +469,23 @@ namespace TowerCounter
 
         public TowerCounterBehaviour()
         {
-            _instance = this;
             InitializeForLevelStart();
         }
 
         internal void InitializeForLevelStart()
         {
+            lock (Sync)
+            {
+                _instance = this;
+            }
+
             _locations = LoadLocations();
             LoadState();
         }
 
         protected override void Update(float p_delta)
         {
-            if (!TowerCounterDisplay.Enabled)
+            if (!ModEntry.IsRuntimeActive())
             {
                 return;
             }
