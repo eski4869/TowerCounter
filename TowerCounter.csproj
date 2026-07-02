@@ -39,6 +39,10 @@
 		<Reference Include="Microsoft.CSharp"/>
 		<Reference Include="System.Data"/>
 		<Reference Include="System.Xml"/>
+		<Reference Include="0Harmony">
+			<HintPath>lib\0Harmony.dll</HintPath>
+			<Private>True</Private>
+		</Reference>
 		<Reference Include="JumpKing">
 			<Private>False</Private>
 			<HintPath>C:\Program Files (x86)\Steam\steamapps\common\Jump King\JumpKing.exe</HintPath>

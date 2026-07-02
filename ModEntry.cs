@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Xml.Serialization;
 using EntityComponent;
+using HarmonyLib;
 using JumpKing;
 using JumpKing.API;
 using JumpKing.GameManager;
@@ -29,7 +31,9 @@ namespace TowerCounter
         private static string _settingsPath;
         private static bool _settingsDirty;
         private static bool _processExitRegistered;
+        private static bool _drawPatchRegistered;
         private static bool _isLevelRunning;
+        private static Harmony _harmony;
 
         public static Preferences Preferences { get; private set; }
 
@@ -37,12 +41,14 @@ namespace TowerCounter
         public static void BeforeLevelLoad()
         {
             EnsurePreferencesLoaded();
+            RegisterDrawPatch();
         }
 
         [OnLevelStart]
         public static void OnLevelStart()
         {
             EnsurePreferencesLoaded();
+            RegisterDrawPatch();
             _isLevelRunning = true;
 
             if (!IsRuntimeActive())
@@ -57,7 +63,7 @@ namespace TowerCounter
         private static void StartTowerRuntime()
         {
             TowerCounterDisplay.Enabled = true;
-            new TowerCounterDisplay();
+            TowerCounterDisplay.InvalidateSlot();
             RegisterTowerBehaviour();
         }
 
@@ -140,6 +146,7 @@ namespace TowerCounter
 
             Preferences.IsEnabled = isEnabled;
             _settingsDirty = true;
+            TowerCounterDisplay.InvalidateSlot();
 
             if (IsRuntimeActive())
             {
@@ -210,6 +217,37 @@ namespace TowerCounter
         private static void OnProcessExit(object sender, EventArgs e)
         {
             SaveSettingsIfDirty();
+        }
+
+        private static void RegisterDrawPatch()
+        {
+            if (_drawPatchRegistered)
+            {
+                return;
+            }
+
+            MethodInfo drawMethod = typeof(GameLoop).GetMethod(
+                "Draw",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+            );
+            MethodInfo postfixMethod = typeof(ModEntry).GetMethod(
+                "DrawTowerCounter",
+                BindingFlags.Static | BindingFlags.NonPublic
+            );
+
+            if (drawMethod == null || postfixMethod == null)
+            {
+                return;
+            }
+
+            _harmony = new Harmony("eski4869.TowerCounter");
+            _harmony.Patch(drawMethod, postfix: new HarmonyMethod(postfixMethod));
+            _drawPatchRegistered = true;
+        }
+
+        private static void DrawTowerCounter(GameLoop __instance)
+        {
+            TowerCounterDisplay.Draw(__instance);
         }
 
         private static void SaveSettingsIfDirty()
@@ -342,20 +380,58 @@ namespace TowerCounter
         }
     }
 
-    public class TowerCounterDisplay : Entity, IForeground
+    public static class TowerCounterDisplay
     {
-        private static readonly FieldInfo TimerDisplayPositionField = typeof(GameLoop).GetField(
-            "TIMER_DISPLAY_POSITION",
-            BindingFlags.Static | BindingFlags.NonPublic
+        private const float DisplayX = 12f;
+        private const float FirstDisplayY = 26f;
+        private const float DisplayLineHeight = 18f;
+        private static readonly FieldInfo PauseManagerField = typeof(GameLoop).GetField(
+            "m_pause_manager",
+            BindingFlags.Instance | BindingFlags.NonPublic
         );
+
+        private static readonly KnownOverlay[] KnownOverlays =
+        {
+            new KnownOverlay(
+                "JumpKingLastJumpValue.JumpKingLastJumpValue",
+                0
+            ),
+            new KnownOverlay(
+                "JumpKingPlayerCoordinates.JumpKingPlayerCoordinates",
+                1
+            ),
+            new KnownOverlay(
+                "JumpKingLevelPercentage.JumpKingLevelPercentage",
+                2
+            )
+        };
+
+        private static PropertyInfo _pauseIsPausedProperty;
+        private static int _cachedSlot;
+        private static bool _slotDirty = true;
+        private static bool _wasPaused = true;
 
         public static bool Enabled = false;
 
-        public void ForegroundDraw()
+        public static void Draw(GameLoop gameLoop)
         {
             if (!Enabled)
             {
                 return;
+            }
+
+            bool isPaused = IsPaused(gameLoop);
+
+            if (isPaused)
+            {
+                _wasPaused = true;
+                return;
+            }
+
+            if (_wasPaused)
+            {
+                _slotDirty = true;
+                _wasPaused = false;
             }
 
             SpriteFont font = GetFont();
@@ -390,25 +466,190 @@ namespace TowerCounter
             return Game1.instance.contentManager.font.MenuFontSmall;
         }
 
+        public static void InvalidateSlot()
+        {
+            _slotDirty = true;
+        }
+
         private static Vector2 GetDrawPosition()
         {
+            return new Vector2(DisplayX, FirstDisplayY + DisplayLineHeight * GetTowerSlot());
+        }
+
+        private static bool IsPaused(GameLoop gameLoop)
+        {
+            if (gameLoop == null || PauseManagerField == null)
+            {
+                return false;
+            }
+
             try
             {
-                if (TimerDisplayPositionField != null)
-                {
-                    object value = TimerDisplayPositionField.GetValue(null);
+                object pauseManager = PauseManagerField.GetValue(gameLoop);
 
-                    if (value is Vector2)
-                    {
-                        return (Vector2)value + new Vector2(0f, 24f);
-                    }
+                if (pauseManager == null)
+                {
+                    return false;
                 }
+
+                if (_pauseIsPausedProperty == null || _pauseIsPausedProperty.DeclaringType != pauseManager.GetType())
+                {
+                    _pauseIsPausedProperty = pauseManager.GetType().GetProperty(
+                        "IsPaused",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    );
+                }
+
+                if (_pauseIsPausedProperty == null)
+                {
+                    return false;
+                }
+
+                object value = _pauseIsPausedProperty.GetValue(pauseManager, null);
+                return value is bool && (bool)value;
             }
             catch
             {
+                return false;
+            }
+        }
+
+        private static int GetTowerSlot()
+        {
+            if (_slotDirty)
+            {
+                _cachedSlot = CalculateTowerSlot();
+                _slotDirty = false;
             }
 
-            return new Vector2(12f, 32f);
+            return _cachedSlot;
+        }
+
+        private static int CalculateTowerSlot()
+        {
+            var occupiedSlots = new HashSet<int>();
+
+            for (int i = 0; i < KnownOverlays.Length; i++)
+            {
+                KnownOverlay overlay = KnownOverlays[i];
+
+                if (overlay.IsEnabled())
+                {
+                    occupiedSlots.Add(overlay.Slot);
+                }
+            }
+
+            for (int slot = 0; slot <= KnownOverlays.Length; slot++)
+            {
+                if (!occupiedSlots.Contains(slot))
+                {
+                    return slot;
+                }
+            }
+
+            return KnownOverlays.Length;
+        }
+
+        private static Type GetLoadedType(string typeName)
+        {
+            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+            for (int i = 0; i < assemblies.Length; i++)
+            {
+                Type type = assemblies[i].GetType(typeName, false);
+
+                if (type != null)
+                {
+                    return type;
+                }
+            }
+
+            return null;
+        }
+
+        private sealed class KnownOverlay
+        {
+            public readonly string TypeName;
+            public readonly int Slot;
+
+            private Type _type;
+            private PropertyInfo _preferencesProperty;
+            private Type _preferencesType;
+            private PropertyInfo _isEnabledProperty;
+
+            public KnownOverlay(string typeName, int slot)
+            {
+                TypeName = typeName;
+                Slot = slot;
+            }
+
+            public bool IsEnabled()
+            {
+                object preferences = GetPreferences();
+
+                if (preferences == null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    Type preferencesType = preferences.GetType();
+
+                    if (_isEnabledProperty == null || _preferencesType != preferencesType)
+                    {
+                        _preferencesType = preferencesType;
+                        _isEnabledProperty = preferencesType.GetProperty(
+                            "IsEnabled",
+                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                        );
+                    }
+
+                    if (_isEnabledProperty == null)
+                    {
+                        return false;
+                    }
+
+                    object value = _isEnabledProperty.GetValue(preferences, null);
+                    return value is bool && (bool)value;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            private object GetPreferences()
+            {
+                try
+                {
+                    if (_type == null)
+                    {
+                        _type = GetLoadedType(TypeName);
+
+                        if (_type == null)
+                        {
+                            return null;
+                        }
+
+                        _preferencesProperty = _type.GetProperty(
+                            "Preferences",
+                            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
+                        );
+                    }
+
+                    if (_preferencesProperty == null)
+                    {
+                        return null;
+                    }
+
+                    return _preferencesProperty.GetValue(null, null);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
         }
     }
 
