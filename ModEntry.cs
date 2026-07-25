@@ -48,29 +48,9 @@ namespace TowerCounter
         public static void OnLevelStart()
         {
             EnsurePreferencesLoaded();
-            RegisterDrawPatch();
             _isLevelRunning = true;
-
-            if (!IsRuntimeActive())
-            {
-                StopTowerRuntime();
-                return;
-            }
-
-            StartTowerRuntime();
-        }
-
-        private static void StartTowerRuntime()
-        {
-            TowerCounterDisplay.Enabled = true;
             TowerCounterDisplay.InvalidateSlot();
             RegisterTowerBehaviour();
-        }
-
-        private static void StopTowerRuntime()
-        {
-            TowerCounterDisplay.Enabled = false;
-            UnregisterTowerBehaviour();
         }
 
         private static void RegisterTowerBehaviour()
@@ -87,33 +67,35 @@ namespace TowerCounter
             if (existingBehaviour != null)
             {
                 _registeredBehaviour = existingBehaviour;
-                _registeredBehaviour.InitializeForLevelStart();
+                _registeredBehaviour.Enabled = Preferences.IsEnabled;
                 return;
             }
 
             _registeredBehaviour = new TowerCounterBehaviour();
-            player.AddComponents(new Component[] { _registeredBehaviour });
+            player.AddComponents(
+                Preferences.IsEnabled,
+                new Component[] { _registeredBehaviour }
+            );
         }
 
-        private static void UnregisterTowerBehaviour()
+        internal static void ClearRegisteredTowerBehaviour(TowerCounterBehaviour behaviour)
         {
-            TowerCounterBehaviour.ClearInstance(_registeredBehaviour);
-            _registeredBehaviour = null;
+            if (ReferenceEquals(_registeredBehaviour, behaviour))
+            {
+                _registeredBehaviour = null;
+            }
         }
 
         [OnLevelEnd]
         public static void OnLevelEnd()
         {
             _isLevelRunning = false;
-            StopTowerRuntime();
             SaveSettingsIfDirty();
         }
 
         [OnLevelUnload]
         public static void OnLevelUnload()
         {
-            _isLevelRunning = false;
-            StopTowerRuntime();
             SaveSettingsIfDirty();
         }
 
@@ -148,13 +130,9 @@ namespace TowerCounter
             _settingsDirty = true;
             TowerCounterDisplay.InvalidateSlot();
 
-            if (IsRuntimeActive())
+            if (_registeredBehaviour != null)
             {
-                StartTowerRuntime();
-            }
-            else
-            {
-                StopTowerRuntime();
+                _registeredBehaviour.Enabled = isEnabled;
             }
         }
 
@@ -411,11 +389,9 @@ namespace TowerCounter
         private static bool _slotDirty = true;
         private static bool _wasPaused = true;
 
-        public static bool Enabled = false;
-
         public static void Draw(GameLoop gameLoop)
         {
-            if (!Enabled)
+            if (!ModEntry.IsRuntimeActive())
             {
                 return;
             }
@@ -658,49 +634,22 @@ namespace TowerCounter
         private const int MinScreen = 1;
         private const int MaxScreen = 169;
 
-        private static readonly object Sync = new object();
         private static TowerCounterBehaviour _instance;
 
         public static int Count
         {
             get
             {
-                lock (Sync)
-                {
-                    if (_instance == null)
-                    {
-                        return 0;
-                    }
-
-                    return _instance._count;
-                }
-            }
-        }
-
-        public static void ReloadState()
-        {
-            lock (Sync)
-            {
-                if (_instance != null)
-                {
-                    _instance.LoadState();
-                }
-            }
-        }
-
-        internal static void ClearInstance(TowerCounterBehaviour behaviour)
-        {
-            lock (Sync)
-            {
-                if (ReferenceEquals(_instance, behaviour))
-                {
-                    _instance = null;
-                }
+                return _instance == null ? 0 : _instance._count;
             }
         }
 
         private Location[] _locations = new Location[0];
+        private PlayerEntity _player;
         private KeyboardState _previousKeyboardState;
+        private int _resolvedScreen = -1;
+        private string _resolvedArea = "Unknown";
+        private bool _runtimeInitialized;
 
         private bool _hasTower;
         private bool _hasLeftTowerArea;
@@ -710,32 +659,49 @@ namespace TowerCounter
 
         public TowerCounterBehaviour()
         {
-            InitializeForLevelStart();
         }
 
-        internal void InitializeForLevelStart()
+        protected override void OnEnable()
         {
-            lock (Sync)
-            {
-                _instance = this;
-            }
+            _instance = this;
+            _previousKeyboardState = Keyboard.GetState();
 
+            if (!_runtimeInitialized)
+            {
+                InitializeForLevelStart();
+            }
+        }
+
+        protected override void OnDisable()
+        {
+            ClearInstance();
+        }
+
+        protected override void OnOwnerDestroy()
+        {
+            ClearInstance();
+            _player = null;
+            ModEntry.ClearRegisteredTowerBehaviour(this);
+        }
+
+        private void ClearInstance()
+        {
+            if (ReferenceEquals(_instance, this))
+            {
+                _instance = null;
+            }
+        }
+
+        private void InitializeForLevelStart()
+        {
+            _runtimeInitialized = true;
+            _player = EntityManager.instance.Find<PlayerEntity>();
             _locations = LoadLocations();
             LoadState();
         }
 
         protected override void Update(float p_delta)
         {
-            if (!ModEntry.IsRuntimeActive())
-            {
-                return;
-            }
-
-            if (_locations == null || _locations.Length == 0)
-            {
-                _locations = LoadLocations();
-            }
-
             if (_hasTower && _towerArea == "Unknown")
             {
                 RestoreTowerAreaFromEntranceScreen();
@@ -743,9 +709,7 @@ namespace TowerCounter
 
             KeyboardState keyboardState = Keyboard.GetState();
             int screen = JumpKing.Camera.CurrentScreen + 1;
-            string area = GetAreaNameForScreen(screen);
-            PlayerEntity player = EntityManager.instance.Find<PlayerEntity>();
-            bool isOnGround = player != null && player.m_body.IsOnGround;
+            string area = GetAreaNameForCurrentScreen(screen);
 
             if (WasKeyPressed(keyboardState, Keys.T))
             {
@@ -764,8 +728,19 @@ namespace TowerCounter
                 AdjustCount(-1);
             }
 
-            UpdateAutoCount(screen, area, isOnGround);
+            UpdateAutoCount(screen, area);
             _previousKeyboardState = keyboardState;
+        }
+
+        private string GetAreaNameForCurrentScreen(int screen)
+        {
+            if (_resolvedScreen != screen)
+            {
+                _resolvedScreen = screen;
+                _resolvedArea = GetAreaNameForScreen(screen);
+            }
+
+            return _resolvedArea;
         }
 
         private bool WasKeyPressed(KeyboardState keyboardState, Keys key)
@@ -800,7 +775,7 @@ namespace TowerCounter
             SaveState();
         }
 
-        private void UpdateAutoCount(int screen, string area, bool isOnGround)
+        private void UpdateAutoCount(int screen, string area)
         {
             if (!_hasTower)
             {
@@ -818,7 +793,10 @@ namespace TowerCounter
                 return;
             }
 
-            if (_hasLeftTowerArea && screen == _entranceScreen && isOnGround)
+            if (_hasLeftTowerArea &&
+                screen == _entranceScreen &&
+                _player != null &&
+                _player.m_body.IsOnGround)
             {
                 _count++;
                 _hasLeftTowerArea = false;
